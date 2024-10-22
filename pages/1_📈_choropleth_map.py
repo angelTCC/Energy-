@@ -6,24 +6,36 @@ import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
 import plotly.figure_factory as ff
-
+import plotly.express as px
+import mapclassify
 
 st.set_page_config(layout="wide")
 
 data = gdp.read_file('/home/angel/Documents/galois/EnergyStreamlit/data/data.shp')
 
-# side bar ===========================================
+# SIDE BAR ===========================================
 
 markdown = """info"""
 st.sidebar.title("About")
 st.sidebar.info(markdown)
 st.sidebar.image("https://i.imgur.com/UbOXYAU.png")
 
-# BODY =============================================
+# INTRODUCTION =============================================
 
-st.title("Marker Cluster")
+st.title("Choropleth map")
+st.markdown('''
+            On this page, I will show the energy characteristics such as consumption, 
+            generation potential, and the amount of money spent using a choropleth map. 
+            You can select the number of classes and the scheme to categorize the groups. 
+            Additionally, you can visualize the selected data with a histogram. 
+            You can remove outliers to improve the visualization; however, the removed data 
+            will be displayed.
+            ''')
 
-col1, col2,col3 = st.columns([1, 1, 1]) 
+
+## SELECTBOX ========================================================
+
+col1, col2,col3, col4 = st.columns([1, 1, 1, 1]) 
 with col3:
 
     select_schema = st.selectbox(
@@ -44,56 +56,70 @@ with col2:
         (2, 3, 4,5 ,6),
         index=0,
     )
-# Define layout using st.columns
-col1, col2 = st.columns([2, 1])  # Ratio of space for map and plot (2:1)
-
-# Column 1: Display the map
-with col1:
-    m = leafmap.Map(center=[40, -100], zoom=4)
-    m.add_xyz_service("xyz.Esri.WorldGrayCanvas")
-    m.add_data(
-        data=data, 
-        column=select_column, 
-        scheme=select_schema, 
-        k=number_classes,
-        cmap="Blues", 
-        style={'stroke': False},
-        legend_title="Population"
+with col4:
+    max_value = st.slider(
+    "Take values up to",
+    value=data[select_column].max(),
     )
-    m.to_streamlit(height=600, width=900)
 
-# Column 2: Display the histogram
-with col2:
-    st.markdown('''Leafmap is a Python package for interactive mapping and geospatial 
-                analysis with minimal coding in a Jupyter environment. It is a spin-off 
-                project of the geemap Python package, which was designed specifically to 
-                work with Google Earth Engine (GEE). However, not everyone in the geospatial 
-                community has access to the GEE cloud computing platform. Leafmap is designed 
-                 fill this gap for non-GEE users.''')
+    agree = st.checkbox(label="Show data don't selected",
+                        value=True)
+    
+# HISTOGRAM AND DATAFRAME  ====================================================
 
+col1, col2 = st.columns([1, 1])  # Ratio of space for map and plot (2:1)
+
+dummi = data.loc[data[select_column] <= max_value, select_column]
+dummi2 = data.loc[data[select_column] > max_value, :]#data.columns.difference([select_column])]
+
+# HISTROGRAM
+
+with col1:
 
     if select_schema == "Quantiles":
-        classes = mapclassify.Quantiles(data[select_column], number_classes)
+        classes = mapclassify.Quantiles(dummi, number_classes)
     elif select_schema == "EqualInterval":
-        classes = mapclassify.EqualInterval(data[select_column], number_classes)
+        classes = mapclassify.EqualInterval(dummi, number_classes)
     elif select_schema == "FisherJenks":
-        classes = mapclassify.FisherJenks(data[select_column], number_classes)
-    else:
-        classes = mapclassify.NaturalBreaks(data[select_column], number_classes)
+        classes = mapclassify.FisherJenks(dummi, number_classes)
+    elif select_schema == "NaturalBreaks":
+        classes = mapclassify.NaturalBreaks(dummi, number_classes)
 
-    # Convert plot size from pixels to inches
-    px = 1 / plt.rcParams['figure.dpi']  # Pixel in inches
-    group_labels = ['distplot']
-    fig = ff.create_distplot([data[select_column].values], 
-                             group_labels,
-                             bin_size=(data[select_column].max()-data[select_column].min())/int(np.log2(data.shape[0]+1)))
+    fig = px.histogram(dummi, 
+                    x=select_column,
+                    marginal="box", # or violin, rug
+                    nbins=int((dummi.max()-dummi.min())/int(np.log2(data.shape[0]+1)))
+                    )
+
     for q in classes.bins:
         fig.add_vline(x=q, line_width=3, line_dash="dash", line_color="green")
 
-
     st.plotly_chart(fig, use_container_width=True)
 
+# DATAFRAME
 
+with col2:
+    if agree:
+        if dummi2.shape[0]!=0:
+            st.dataframe(dummi2.drop(columns=['geometry']))
+        else:
+            st.markdown('''Here the dataframe will be showed''')
+
+
+## MAP ===================================================
+
+m = leafmap.Map(center=[40, -100], zoom=4)
+m.add_xyz_service("xyz.Esri.WorldGrayCanvas")
+m.add_data(
+    data=data, 
+    column=select_column, 
+    scheme=select_schema, 
+    k=number_classes,
+    cmap="Blues", 
+    style={'stroke': False},
+    legend_title="Population"
+)
+m.to_streamlit()#height=600, width=900)
 
 with st.expander("See source code"):
     with st.echo():
